@@ -1,0 +1,206 @@
+---
+title: "Bromelias"
+author: "Rosario Ureña Mena. A76600"
+format: 
+  html:
+    theme: cosmo
+server: shiny
+---
+Universidad de Costa Rica
+
+Maestría Académica en Gestión Integral del Recurso Hídrico
+
+Curso PF 0953, Programación en R, 2022-II
+
+Profesor: Manuel Vargas del Valle
+
+# TRABAJO FINAL
+
+Cargar librerías
+```{r}
+#| label: inicio
+#| context: setup
+#| message: false
+#| warning: false
+
+library(shiny)
+library(rsconnect)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(plotly)
+library(DT)
+library(dplyr)
+library(sf)
+library(s2)
+library(terra)
+library(leaflet)
+library(plotly)
+```
+Cargar datos de presencia de bromelias en Costa Rica, según Infraestructura Mundial de Información en Biodiversidad (GBIF)
+```{r}
+#| label: lectura-datos
+#| context: data
+#| message: false
+#| warning: false
+
+bromelias <- read_delim(file= "C:/Users/rosur/Documents/CURSO PROGRAMACION/TRABAJOFINALR/Bromelias.csv",
+                       col_select = c(
+      "species",
+      "stateProvince",
+      "locality",
+      "eventDate",
+      "decimalLongitude",
+      "decimalLatitude", 
+      "month",
+      "year"),
+      locale = locale(encoding = "UTF-8"))
+
+ 
+bromelias <- bromelias |>
+   mutate(eventDate= as.Date(eventDate, format = "%d/%m/%Y"))
+ 
+bromelias <- bromelias |>
+  drop_na()
+```
+# Tabla
+Barra de selección
+```{r}
+#| panel: sidebar
+
+lista_especies <- unique(bromelias$species)
+lista_especies <- sort(lista_especies)
+lista_especies <- c("Todas", lista_especies)
+
+selectInput(
+  inputId = "especie",
+  label = "Especie",
+  choices = lista_especies,
+  selected = "Todas"
+)
+
+```
+```{r}
+#| panel: fill
+dataTableOutput("tabla")
+plotOutput(outputId= "Grafico")
+```
+
+```{r}
+#| label: servidor
+#| context: server
+
+filtrarRegistros <- reactive({
+   registros_filtrados <- bromelias
+  
+  if (input$especie != "Todas") {
+    registros_filtrados <-
+      registros_filtrados |>
+      filter(species == input$especie)
+  }
+  return(registros_filtrados)
+})  
+
+output$tabla <- renderDataTable({
+  bromelias <- filtrarRegistros()
+  
+  bromelias |>
+    st_drop_geometry() |>
+    select(species, stateProvince, locality, eventDate, decimalLongitude,
+      decimalLatitude) |>
+    datatable(
+      colnames = c("Especie", "Provincia", "Localidad", "Fecha", "Coordenada X", "Coordenada Y"),
+      options = list(
+        pageLength = 5,
+        language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+      )
+    )
+})
+
+
+```
+# Gráfico
+
+```{r}
+#| panel: sidebar
+
+lista_especies <- unique(bromelias$species)
+lista_especies <- sort(lista_especies)
+lista_especies <- c("Todas", lista_especies)
+
+selectInput(
+  inputId = "especie",
+  label = "Especie",
+  choices = lista_especies,
+  selected = "Todas"
+)
+
+lista_anios <- unique(bromelias$year)
+lista_anios <- sort(lista_anios)
+lista_anios <- c("Todos", lista_anios)
+
+selectInput(inputId = "year",
+  label = "Año",
+  choices = bromelias$year,
+  selected = "Todas"
+)
+```
+
+```{r}
+#| label: grafico
+#| context: server
+output$Grafico <- renderPlotly({
+  
+filtrarRegistros <- reactive({
+   registros_filtrados <- bromelias
+  
+  if (input$especie != "Todas") {
+    registros_filtrados <-
+      registros_filtrados |>
+      filter(species == input$especie)}
+    
+    if (input$year != "Todas") {
+    registros_filtrados <-
+      registros_filtrados |>
+      filter(year == input$year)
+  }
+  return(registros_filtrados)
+})})
+```
+
+#Mapa
+
+
+
+
+
+
+
+3. Un conjunto de polígonos correspondientes a alguna zonificación del área de estudio 
+
+```{r}
+archivo_dwc <- "C:/Users/rosur/Documents/CURSO PROGRAMACION/TRABAJOFINALR/Bromelias.csv"
+
+registros <-
+  st_read(
+    archivo_dwc,
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude", 
+      "Y_POSSIBLE_NAMES=decimalLatitude"),
+    quiet = TRUE)
+
+st_crs(registros) <- 4326
+
+provincias <- st_read("limite_provincial.shp")
+provincias <-
+  provincias |>
+  st_transform(4326)
+
+
+SINAC <- st_read("SINAC.shp")
+SINAC <-
+  SINAC|>
+  st_transform(4326)
+
+```
+
