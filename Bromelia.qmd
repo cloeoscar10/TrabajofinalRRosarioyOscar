@@ -1,6 +1,6 @@
 ---
 title: "Bromelias"
-author: "Rosario Ureña Mena. A76600"
+author: "Rosario Ureña Mena. A76600 y Oscar Vásquez Bolaños. B58847"
 format: 
   html:
     theme: cosmo
@@ -35,7 +35,9 @@ library(sf)
 library(s2)
 library(terra)
 library(leaflet)
-library(plotly)
+library(scales)
+library(leaflet.extras)
+
 ```
 Cargar datos de presencia de bromelias en Costa Rica, según Infraestructura Mundial de Información en Biodiversidad (GBIF)
 ```{r}
@@ -44,6 +46,7 @@ Cargar datos de presencia de bromelias en Costa Rica, según Infraestructura Mun
 #| message: false
 #| warning: false
 
+#Lectura de los datos para la table y el gráfico eliminando los valores nulos
 bromelias <- read_delim(file= "C:/Users/rosur/Documents/CURSO PROGRAMACION/TRABAJOFINALR/Bromelias.csv",
                        col_select = c(
       "species",
@@ -62,11 +65,45 @@ bromelias <- bromelias |>
  
 bromelias <- bromelias |>
   drop_na()
+
+#Archivos para el mapa
+archivo_dwc <- "C:/Users/rosur/Documents/CURSO PROGRAMACION/TRABAJOFINALR/Bromelias.csv"
+
+#ubicación de los avistamientos de bromelias
+registros <-
+  st_read(
+    archivo_dwc,
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude", 
+      "Y_POSSIBLE_NAMES=decimalLatitude"),
+    quiet = TRUE)
+
+st_crs(registros) <- 4326
+
+
+
+#límite provincial
+provincias <- st_read("limite_provincial.shp")
+provincias <-
+  provincias |>
+  st_transform(4326)
+
+#áreas protegidas
+SINAC <- st_read("SINAC.shp")
+SINAC <-
+  SINAC|>
+  st_transform(4326)
+
+area.silvestre.protegida <- SINAC$nombre_asp
+
+
 ```
-# Tabla
+# Tabla de avistamiento de bromelias en Costa Rica
 Barra de selección
 ```{r}
 #| panel: sidebar
+
+#selección de especies
 
 lista_especies <- unique(bromelias$species)
 lista_especies <- sort(lista_especies)
@@ -76,6 +113,27 @@ selectInput(
   inputId = "especie",
   label = "Especie",
   choices = lista_especies,
+  selected = "Todas"
+)
+#selección de años
+lista_anios_tabla <- unique(bromelias$year)
+lista_anios_tabla <- sort(lista_anios_tabla)
+lista_anios_tabla <- c("Todos", lista_anios_tabla)
+
+selectInput(inputId = "year_tabla",
+  label = "Año",
+  choices = lista_anios_tabla,
+  selected = "Todos"
+)
+#selección de provincia
+lista_provincia <- unique(registros$stateProvince)
+lista_provincia <- sort(lista_provincia)
+lista_provincia <- c("Todas", lista_provincia)
+
+selectInput(
+  inputId = "provincia_t",
+  label = "Provincia",
+  choices = lista_provincia,
   selected = "Todas"
 )
 
@@ -98,6 +156,17 @@ filtrarRegistros <- reactive({
       registros_filtrados |>
       filter(species == input$especie)
   }
+   if(input$year_tabla != "Todos") {
+      registros_filtrados <-
+        registros_filtrados |>
+        filter(year == input$year_tabla)
+   }
+   if (input$provincia_t != "Todas") {
+    registros_filtrados <-
+      registros_filtrados |>
+      filter(stateProvince == input$provincia_t)
+  }
+   
   return(registros_filtrados)
 })  
 
@@ -119,88 +188,228 @@ output$tabla <- renderDataTable({
 
 
 ```
-# Gráfico
+# Gráfico de prescencia de Bromelias en Costa Rica
+## Clasificación por especie y mes de avistamiento por año, entre 1888 y 2021
+
+```{r}
+#| panel: sidebar
+#| warning: false
+
+#Selección de especies
+lista_especies_grafico <- unique(bromelias$species)
+lista_especies_grafico <- sort(lista_especies_grafico)
+lista_especies_grafico <- c("Todas", lista_especies_grafico)
+
+selectInput(
+  inputId = "especie_grafico",
+  label = "Especie",
+  choices = lista_especies_grafico,
+  selected = "Todas"
+)
+
+#selección de años
+lista_anios_grafico <- unique(bromelias$year)
+lista_anios_grafico <- sort(lista_anios_grafico)
+lista_anios_grafico <- c("Todos", lista_anios_grafico)
+
+selectInput(inputId = "year_grafico",
+  label = "Año",
+  choices = lista_anios_grafico,
+  selected = "Todos"
+)
+
+#selección de provincia
+lista_provincia_g <- unique(registros$stateProvince)
+lista_provincia_g <- sort(lista_provincia_g)
+lista_provincia_g <- c("Todas", lista_provincia_g)
+
+selectInput(
+  inputId = "provincia_g",
+  label = "Provincia",
+  choices = lista_provincia_g,
+  selected = "Todas"
+)
+```
+
+```{r}
+#| panel: fill
+plotlyOutput("grafico")
+
+```
+
+```{r}
+#| label: servidor 2
+#| context: server
+
+filtrarRegistros_grafico <- reactive({
+  registros_filtrados_grafico <- bromelias
+  
+  if(input$especie_grafico != "Todas") {
+    registros_filtrados_grafico <-
+      registros_filtrados_grafico |>
+      filter(species == input$especie_grafico)
+  }
+  
+    if(input$year_grafico != "Todos") {
+      registros_filtrados_grafico <-
+        registros_filtrados_grafico |>
+        filter(year == input$year_grafico)
+    }
+  if (input$provincia_g != "Todas") {
+    registros_filtrados_grafico <-
+      registros_filtrados_grafico |>
+      filter(stateProvince == input$provincia_g)}
+  return(registros_filtrados_grafico)
+})
+
+output$grafico <- renderPlotly({
+  bromelias <- filtrarRegistros_grafico()
+  
+  bromelias <-
+    bromelias |>
+    filter(month %in% seq(1,12,1))
+  
+  meses = c("1" = "Ene", "2" = "Feb", "3" = "Mar", "4" = "Abr", 
+             "5" = "May", "6" = "Jun", "7" = "Jul", "8" = "Ago", 
+             "9" =  "Sep", "10" =  "Oct", "11" =  "Nov", "12" =  "Dic")
+  
+  especie_grafico <-
+    bromelias |>
+    ggplot(aes(x = as.numeric(month), fill = species))+
+    geom_bar()+
+    labs(x = "Meses", y = "Cantidad",
+         title = "Avistamiento de Bromelias en Costa Rica",
+         fill= "Especie")+
+    scale_x_continuous(breaks = seq(1,12,1))+
+    theme(panel.background = element_rect(fill = 'transparent'),
+          panel.grid = element_line(color="gray80"),
+          panel.border = element_rect(color = "gray", fill='transparent', size = 2))
+    
+  
+ggplotly(especie_grafico)|>
+  config(locale = "es") |>
+  layout(title = list(text = paste0('<b>',"Avistamiento de Bromelias en Costa Rica", '</b> <br>', 
+                                    '<sup>','</sup>')))
+
+})
+```
+
+# Mapa de ubicación de Bromelias en Costa Rica
 
 ```{r}
 #| panel: sidebar
 
-lista_especies <- unique(bromelias$species)
-lista_especies <- sort(lista_especies)
-lista_especies <- c("Todas", lista_especies)
+#selección de especies
+lista_especies_mapa <- unique(registros$species) #obtener valores 
+llista_especies_mapa <- sort(lista_especies_mapa) #ordenar
+lista_especies_mapa <- c("Todas", lista_especies_mapa) #agregar opción todas
 
 selectInput(
-  inputId = "especie",
+  inputId = "especie_mapa",
   label = "Especie",
-  choices = lista_especies,
+  choices = lista_especies_mapa,
   selected = "Todas"
 )
 
-lista_anios <- unique(bromelias$year)
-lista_anios <- sort(lista_anios)
-lista_anios <- c("Todos", lista_anios)
+#selección de año
+lista_anios_mapa <- unique(registros$year) #obtener valores 
+lista_anios_mapa <- sort(lista_anios_mapa) #ordenar
+lista_anios_mapa <- c("Todos", lista_anios_mapa) #agregar opción todas
 
-selectInput(inputId = "year",
+selectInput(
+  inputId = "anio_mapa",
   label = "Año",
-  choices = bromelias$year,
+  choices = lista_anios_mapa,
+  selected = "Todos"
+)
+
+#selección de provincia
+lista_provincia_mapa <- unique(registros$stateProvince)
+lista_provincia_mapa <- sort(lista_provincia_mapa)
+lista_provincia_mapa <- c("Todas", lista_provincia_mapa)
+
+selectInput(
+  inputId = "provincia",
+  label = "Provincia",
+  choices = lista_provincia_mapa,
   selected = "Todas"
 )
+
+```
+
+
+```{r}
+#| panel: fill
+leafletOutput("mymap")
+
 ```
 
 ```{r}
-#| label: grafico
+#| label: servidor-mapa
 #| context: server
-output$Grafico <- renderPlotly({
+#| warning: false
+
+filtrarRegistros_mapa <- reactive({
+  # Valor inicial del objeto que va a retornarse
+  registros_filtrados_mapa <- registros
   
-filtrarRegistros <- reactive({
-   registros_filtrados <- bromelias
-  
-  if (input$especie != "Todas") {
-    registros_filtrados <-
-      registros_filtrados |>
-      filter(species == input$especie)}
-    
-    if (input$year != "Todas") {
-    registros_filtrados <-
-      registros_filtrados |>
-      filter(year == input$year)
+  if (input$especie_mapa != "Todas") {
+    registros_filtrados_mapa <-
+      registros_filtrados_mapa |>
+      filter(species == input$especie_mapa)
   }
-  return(registros_filtrados)
-})})
-```
-
-#Mapa
-
-
-
-
-
-
-
-3. Un conjunto de polígonos correspondientes a alguna zonificación del área de estudio 
-
-```{r}
-archivo_dwc <- "C:/Users/rosur/Documents/CURSO PROGRAMACION/TRABAJOFINALR/Bromelias.csv"
-
-registros <-
-  st_read(
-    archivo_dwc,
-    options = c(
-      "X_POSSIBLE_NAMES=decimalLongitude", 
-      "Y_POSSIBLE_NAMES=decimalLatitude"),
-    quiet = TRUE)
-
-st_crs(registros) <- 4326
-
-provincias <- st_read("limite_provincial.shp")
-provincias <-
-  provincias |>
-  st_transform(4326)
+  
+    if (input$anio_mapa != "Todos") {
+    registros_filtrados_mapa <-
+      registros_filtrados_mapa |>
+      filter(year == input$anio_mapa)
+  }
+  
+  if (input$provincia != "Todas") {
+    registros_filtrados_mapa <-
+      registros_filtrados_mapa |>
+      filter(stateProvince == input$provincia)
+  }
+  
+  return(registros_filtrados_mapa)
+})  
 
 
-SINAC <- st_read("SINAC.shp")
-SINAC <-
-  SINAC|>
-  st_transform(4326)
+output$mymap <- renderLeaflet({
+  registros <- filtrarRegistros_mapa()
+
+  
+  #Transformación de dataframe a shapefile
+  
+  leaflet() |> #mapa en blanco
+  addTiles()|>#fondo de Open Street MAp
+  setView(lng = -84.19452, lat = 9.572735, zoom = 7) |>#centrar el mapa, el zoom va entre 1 y 20
+    addTiles(group = "OpenStreetMap") |>
+  addProviderTiles(providers$Esri.NatGeoWorldMap) |>
+  addPolygons(data = provincias, 
+              color = "black", 
+              fillColor = "transparent", 
+              weight = 1.0,
+              group = "Provincias")|>
+  addPolygons(data = SINAC, 
+              color = "Green", 
+              fillOpacity = 0.5,
+              group = "Áreas Silvestres Protegidas") |>
+  addCircleMarkers(data = registros,
+                   radius = 4,
+                   fillColor = "Red",
+                   fillOpacity = 1.0,
+                   group = "Bromelias",
+                   popup = paste(
+                     paste0("<strong>Especie: </strong>", registros$species ),
+                     paste0("<br><strong>Provincia: </strong>", registros$stateProvince ), 
+                     paste0("<br><strong>Localidad: </strong>", registros$locality), 
+                     paste0("<br><strong>Fecha: </strong>", registros$eventDate ),
+                     sep = '<br/>') ) |>
+addLayersControl(
+    baseGroups = c("OpenStreetMap", "Esri.NatGeoWorldMap"),
+    overlayGroups = c("Provincias", "Áreas Silvestres Protegidas", "Bromelias")) 
+})
 
 ```
 
